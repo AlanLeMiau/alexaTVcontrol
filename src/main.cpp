@@ -5,7 +5,7 @@
 *	 \(__)|| 	https://github.com/AlanLeMiau
 * This program emulates the remote control of a Phillips TV
 * sending commands with an InfraRed LED
-* and receiving voice commands trought an Echo Dot 3 device.
+* and receiving voice commands through an Echo Dot 3 device.
 **************************************************/
 
 #include <ESP8266WiFi.h>
