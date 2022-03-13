@@ -33,10 +33,11 @@
  * 8 -> VCC
  */
 typedef enum {
-    turnON,
-    turnOFF,
+    turnOnOff,
     soundUp,
+    soundUpBig,
     soundDown,
+    soundDownBig,
     mute,
     sourceUp,
     sourceDown,
@@ -60,69 +61,75 @@ cmdTypes command = nocmd;
 uint8_t miau = LOW;
 
 void wifiSetup() {
-    // Set WIFI module to STA mode
     WiFi.mode(WIFI_STA);
-    // Connect
     Serial.printf("\n [WIFI] Connecting to %s \n", WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
-    // Wait
     while (WiFi.status() != WL_CONNECTED) {
         delay(100);
         miau = !miau;
         digitalWrite(ledIR, miau);
     }
-    miau = 150;
-    // Connected!
+    miau = 50;
     Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-
 }// end Wi-Fi setup
+
+void changeSound(uint64_t soundCommand, uint8_t repetition){
+    for (uint8_t r = 0; r < repetition; r++)
+    {
+        irsend.sendRC5(soundCommand);
+        delay(miau);
+    }
+} // end changeSound
+
+void changeSource(uint64_t sourceCommand){
+    irsend.sendRC5(SOURCE);
+    delay(miau);
+    irsend.sendRC5(sourceCommand);
+    delay(miau);
+    irsend.sendRC5(ENTER);
+    delay(miau);
+} // end changeSource
+
 void setup() {
-    pinMode(ledIR, OUTPUT);
     Serial.begin(115200);
     irsend.begin();
     wifiSetup();
 
-    // By default, fauxmoESP creates it's own webserver on the defined port
-    // The TCP port must be 80 for gen3 devices (default is 1901)
-    // This has to be done before the call to enable()
-    fauxmo.createServer(true); // not needed, this is the default value
+    fauxmo.createServer(true);
     fauxmo.setPort(80); // This is required for gen3 devices
-
-    // You have to call enable(true) once you have a WiFi connection
-    // You can enable or disable the library at any moment
-    // Disabling it will prevent the devices from being discovered and switched
     fauxmo.enable(true);
-
-    // Add virtual devices
     fauxmo.addDevice(ID_TV);
     fauxmo.addDevice(ID_SOURCE);
     fauxmo.addDevice(ID_SOUND);
 
     fauxmo.onSetState([](unsigned char device_id, const char * device_name, bool state, unsigned char value) {
-        
-        // Callback when a command from Alexa is received. 
-        // You can use device_id or device_name to choose the element to perform an action onto (relay, LED,...)
-        // State is a boolean (ON/OFF) and value a number from 0 to 255 (if you say "set kitchen light to 50%" you will receive a 128 here).
-        // Just remember not to delay too much here, this is a callback, exit as soon as possible.
-        // If you have to do something more involved here set a flag and process it in your main loop.
-        
         Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-
-        // Checking for device_id is simpler if you are certain about the order they are loaded and it does not change.
-        // Otherwise comparing the device_name is safer.
-
         if ( strcmp(device_name, ID_SOUND) == 0 ) {
             if ( state == false )
             {
                 command = mute;
             } else if (value > 127) {
-                command = soundUp;
+                if (value > 250)
+                {
+                    command = soundUpBig;
+                }
+                else
+                {
+                    command = soundUp;
+                }
             } else if (value < 127) {
-                command = soundDown;
+                if (value < 5)
+                {
+                    command = soundDownBig;
+                }
+                else
+                {
+                    command = soundDown;
+                }
             } else {
                 command = nocmd;
             } // end if state from ID_SOUND
-            
+
         } else if ( strcmp(device_name, ID_SOURCE) == 0 ) {
             if (value > 127) {
                 command = sourceUp;
@@ -130,79 +137,64 @@ void setup() {
                 command = sourceDown;
             } else {
                 command = nocmd;
-            } // end if state from ID_SOUND
+            } // end if state from ID_SOURCE
+
         } else if ( strcmp(device_name, ID_TV) == 0 ) {
-            command = state ? turnON : turnOFF;
+            command = turnOnOff;
                     
         } else {
             command = nocmd;    
         }
-    } // end implicit function
+    } // end lambda function handler
     ); // end fauxmo.onSetState
+
+    fauxmo.setState(ID_TV, true, 127);
+    fauxmo.setState(ID_SOURCE, true, 127);
+    fauxmo.setState(ID_SOUND, true, 127);
+    Serial.println(ESP.getFreeSketchSpace());
 }// end setup
 
 void loop() {
-    // fauxmoESP uses an async TCP server but a sync UDP server
-    // Therefore, we have to manually poll for UDP packets
     fauxmo.handle();
-
-    // If your device state is changed by any other means (MQTT, physical button,...)
-    // you can instruct the library to report the new state to Alexa on next request:
-    // fauxmo.setState(ID_YELLOW, true, 255);
     switch (command){
-        case turnON:
-            Serial.println("command: turnON");
-            irsend.sendRC5(POWER);
-            command = nocmd;
-            break;
-        case turnOFF:
-            Serial.println("command: turnOFF");
+        case turnOnOff:
+            Serial.println("command: turnOnOff");
             irsend.sendRC5(POWER);
             command = nocmd;
             break;
         case soundUp:
-            Serial.println("command: soundUP");
-            irsend.sendRC5(VOLp);
-            delay(miau);
-            irsend.sendRC5(VOLp);
-            delay(miau);
-            irsend.sendRC5(VOLp);
-            delay(miau);
-            irsend.sendRC5(VOLp);
-            delay(miau);
+            Serial.println("command: soundUp");
+            changeSound(VOLp, 7);
+            fauxmo.setState(ID_SOUND, true, 127);
+            command = nocmd;
+            break;
+        case soundUpBig:
+            Serial.println("command: soundUpBig");
+            changeSound(VOLp, 13);
             fauxmo.setState(ID_SOUND, true, 127);
             command = nocmd;
             break;
         case soundDown:
-            Serial.println("command: soundOFF");
-            irsend.sendRC5(VOLm);
-            delay(miau);
-            irsend.sendRC5(VOLm);
-            delay(miau);
-            irsend.sendRC5(VOLm);
-            delay(miau);
-            irsend.sendRC5(VOLm);
-            delay(miau);
+            Serial.println("command: soundDown");
+            changeSound(VOLm, 7);
+            fauxmo.setState(ID_SOUND, true, 127);
+            command = nocmd;
+            break;            
+        case soundDownBig:
+            Serial.println("command: soundDownBig");
+            changeSound(VOLm, 13);
             fauxmo.setState(ID_SOUND, true, 127);
             command = nocmd;
             break;            
         case sourceUp:
             Serial.println("command: sourceUP");
-            irsend.sendRC5(SOURCE);
-            delay(miau);
-            irsend.sendRC5(UP);
-            delay(miau);
-            irsend.sendRC5(ENTER);
+            changeSource(UP);
             fauxmo.setState(ID_SOURCE, true, 127);
             command = nocmd;
             break;
         case sourceDown:
             Serial.println("command: sourceDOWN");
-            irsend.sendRC5(SOURCE);
-            delay(miau);
-            irsend.sendRC5(DOWN);
-            delay(miau);
-            irsend.sendRC5(ENTER);
+            changeSource(DOWN);
             fauxmo.setState(ID_SOURCE, true, 127);
             command = nocmd;
             break;
