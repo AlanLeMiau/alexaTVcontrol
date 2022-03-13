@@ -69,7 +69,7 @@ void wifiSetup() {
         miau = !miau;
         digitalWrite(ledIR, miau);
     }
-    miau = 50;
+    miau = 150;
     Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }// end Wi-Fi setup
 
